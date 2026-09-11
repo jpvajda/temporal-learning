@@ -95,14 +95,16 @@ Activities in sequence, plus what happens when a dependency (a fake HTTP
 API) goes down.
 
 - `src/service.ts` — a small Express server on port `9999` that plays the
-  role of an unreliable third-party API. It returns Spanish greetings and
-  farewells for a given name.
-- `src/activities.ts` — `getSpanishGreeting` and `getSpanishFarewell`, each
-  calling the fake API over HTTP.
-- `src/workflows.ts` — Workflow `greeting(name)` calls both Activities and
-  returns the combined result.
-- `src/worker.ts` — polls task queue `translation-tasks`.
-- `src/clients/greeting.ts` — starts the Workflow for a given name.
+  role of an unreliable third-party API. Routes for greeting, farewell,
+  and thanks.
+- `src/activities.ts` — `getSpanishGreeting`, `getSpanishFarewell`, and
+  `getSpanishThanks`, each calling the fake API over HTTP.
+- `src/workflows.ts` — `greeting(name)` (hello + goodbye) and `thanks(name)`
+  (hello + thanks). Both reuse the same Activities and the same Worker.
+- `src/worker.ts` — polls task queue `translation-tasks`. One Worker hosts
+  every Workflow and Activity in this folder.
+- `src/clients/greeting.ts` — starts the `greeting` Workflow.
+- `src/clients/thanks.ts` — starts the `thanks` Workflow.
 
 Run it (from `farwell-workflow/`, in three terminals):
 
@@ -110,15 +112,33 @@ Run it (from `farwell-workflow/`, in three terminals):
 npm install
 npm run service.watch  # terminal 1: the fake API
 npm run worker.watch   # terminal 2: the Worker
-npm run greeting       # terminal 3: starts the Workflow, prints the result
+npm run greeting       # terminal 3: starts greeting
+npm run thanks         # same terminal: starts thanks (same Worker, same service)
 ```
 
-Expected output:
+Expected output (`npm run greeting`):
 
 ```
 ¡Hola, Tina!
 ¡Adiós, Tina!
 ```
+
+Expected output (`npm run thanks`):
+
+```
+¡Hola, Tina!
+¡Gracias, Tina!
+```
+
+**Do I need a new process?** Usually no.
+
+| You added | New process? |
+|---|---|
+| A new HTTP route | No — add it to `service.ts` |
+| A new Activity | No — export it from `activities.ts`. The Worker already imports all of them. |
+| A new Workflow | No — export it from `workflows.ts`. Same Worker, same task queue. |
+| A way to start it | New *file* (`clients/thanks.ts`), not a new Worker. |
+| A second Worker | Only if you want a different task queue or a different machine. |
 
 **Try this:** stop `service.watch` (`Ctrl+C`), then run `npm run greeting`
 again. Open the Web UI and watch the Activity retry against the down API.
