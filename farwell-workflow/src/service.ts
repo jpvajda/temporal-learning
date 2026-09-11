@@ -1,9 +1,13 @@
 import express, { Express, Request, Response } from 'express';
 
-//   call this via HTTP GET with a URL like:
+// NOT Temporal. Fake third-party API (stand-in for Deepgram / LLM / Stripe).
+// Activities in activities.ts call these routes. Run: `npm run service.watch`
+//
 //   http://localhost:9999/get-spanish-greeting?name=Tina
 //   http://localhost:9999/get-spanish-farewell?name=Tina
 //   http://localhost:9999/get-spanish-thanks?name=Tina
+//
+// Stop this process, then `npm run thanks` — the Activity retries until you start it again.
 
 const app: Express = express();
 const port = 9999;
