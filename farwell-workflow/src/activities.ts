@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from 'axios'; 
 
 const url = 'http://localhost:9999';
 
@@ -10,6 +10,12 @@ export async function getSpanishGreeting(name: string): Promise<string> {
 
 export async function getSpanishFarewell(name: string): Promise<string> {
   const response = await axios.get(`${url}/get-spanish-farewell?name=${name}`);
+
+  return response.data;
+}
+
+export async function getSpanishThanks(name: string): Promise<string> {
+  const response = await axios.get(`${url}/get-spanish-thanks?name=${name}`);
 
   return response.data;
 }

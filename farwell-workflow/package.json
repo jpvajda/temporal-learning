@@ -11,7 +11,8 @@
     "service.watch": "nodemon src/service.ts",
     "worker": "ts-node src/worker.ts",
     "worker.watch": "nodemon src/worker.ts",
-    "greeting": "ts-node src/clients/greeting.ts"
+    "greeting": "ts-node src/clients/greeting.ts",
+    "thanks": "ts-node src/clients/thanks.ts"
   },
   "nodemonConfig": {
     "execMap": {
