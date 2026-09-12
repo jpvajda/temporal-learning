@@ -91,7 +91,14 @@ function setControlsEnabled({ start, pause, resume, stop, reset, failNow }) {
 }
 
 function renderWorker(worker) {
-  if (worker.alive) {
+  if (!worker.managed) {
+    // SKIP_WORKER_SPAWN=1 — some other terminal owns the Worker process, not this API.
+    el.workerStatus.textContent =
+      'Worker: externally managed (SKIP_WORKER_SPAWN=1) — use its own terminal to restart it.';
+    el.workerStatus.classList.remove('down');
+    el.btnCrashWorker.disabled = true;
+    el.btnStartWorker.disabled = true;
+  } else if (worker.alive) {
     el.workerStatus.textContent = `Worker: running (pid ${worker.pid})`;
     el.workerStatus.classList.remove('down');
     el.btnCrashWorker.disabled = false;

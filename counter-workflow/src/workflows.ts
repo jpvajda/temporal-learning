@@ -102,6 +102,11 @@ export async function counterWorkflow(tickIntervalMs = 1000): Promise<CounterSta
   while (!stopped) {
     // A durable wait: if paused, this suspends the Workflow (no polling loop burning
     // resources) until a `resume` or `stop` signal flips the condition.
+    //
+    // Note: this only checks `paused` *between* ticks. A `pause` signal that arrives while
+    // a `tick` call is already in flight won't interrupt it — that tick still finishes and
+    // still increments `count` before the Workflow actually pauses. Good enough for a demo;
+    // a stricter pause would need to pass a CancellationScope into the Activity call.
     await condition(() => !paused || stopped);
     if (stopped) break;
 

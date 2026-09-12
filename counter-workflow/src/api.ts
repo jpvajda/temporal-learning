@@ -12,7 +12,14 @@
 import path from 'node:path';
 import { spawn, ChildProcess } from 'node:child_process';
 import express from 'express';
-import { Connection, Client, WorkflowNotFoundError, WorkflowHandle, SignalDefinition } from '@temporalio/client';
+import {
+  Connection,
+  Client,
+  WorkflowNotFoundError,
+  WorkflowExecutionAlreadyStartedError,
+  WorkflowHandle,
+  SignalDefinition,
+} from '@temporalio/client';
 import {
   counterWorkflow,
   pauseSignal,
@@ -38,6 +45,10 @@ const WORKER_RESPAWN_DELAY_MS = 4000; // how long "Crash Worker" leaves the coun
 const projectRoot = path.join(__dirname, '..');
 const tsNodeBin = path.join(projectRoot, 'node_modules', '.bin', 'ts-node');
 
+// When true, some other terminal is running the Worker (`npm run worker.watch`) and this
+// API must not spawn, kill, or otherwise touch it — see the README's SKIP_WORKER_SPAWN mode.
+const workerManagedByApi = process.env.SKIP_WORKER_SPAWN !== '1';
+
 let workerProcess: ChildProcess | null = null;
 let workerCrashedAt: number | null = null;
 let respawnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -62,7 +73,8 @@ function crashWorker(): boolean {
 
 function workerInfo() {
   return {
-    alive: workerProcess !== null,
+    managed: workerManagedByApi,
+    alive: workerManagedByApi ? workerProcess !== null : null, // unknown — someone else owns it
     pid: workerProcess?.pid ?? null,
     crashedAt: workerCrashedAt,
     respawnEtaMs: workerCrashedAt ? Math.max(0, WORKER_RESPAWN_DELAY_MS - (Date.now() - workerCrashedAt)) : null,
@@ -113,6 +125,18 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Express doesn't catch rejected Promises from async handlers on its own, and an unhandled
+// rejection crashes the whole Node process by default — wrapping every route in this keeps
+// one bad request (e.g. two "Start" clicks racing each other) from taking the API down.
+function asyncRoute(handler: (req: express.Request, res: express.Response) => Promise<void>) {
+  return (req: express.Request, res: express.Response) => {
+    handler(req, res).catch((err) => {
+      console.error(err);
+      if (!res.headersSent) res.status(500).json({ error: 'Unexpected server error.' });
+    });
+  };
+}
+
 /** True once a Workflow Execution with our fixed Id exists AND is still open (not run to completion/termination). */
 async function isOpen(): Promise<boolean> {
   try {
@@ -124,54 +148,74 @@ async function isOpen(): Promise<boolean> {
   }
 }
 
-app.get('/api/status', async (_req, res) => {
-  try {
-    if (!(await isOpen())) {
-      lastKnownState = null;
-      res.json({ started: false, reachable: true, state: null, worker: workerInfo() });
-      return;
-    }
-    const state = await statusFromServer();
-    lastKnownState = state;
-    res.json({ started: true, reachable: true, state, worker: workerInfo() });
-  } catch {
-    // Either `describe` or `query` didn't answer in time — most likely the Worker is down.
-    res.json({ started: lastKnownState !== null, reachable: false, state: lastKnownState, worker: workerInfo() });
-  }
-});
-
-app.post('/api/start', async (_req, res) => {
-  try {
-    if (await isOpen()) {
-      res.json({ started: true, alreadyRunning: true });
-      return;
-    }
-  } catch {
-    res.status(502).json({ error: 'Could not reach Temporal Server.' });
-    return;
-  }
-
-  await client.workflow.start(counterWorkflow, {
-    taskQueue: TASK_QUEUE,
-    workflowId: WORKFLOW_ID,
-    args: [1000],
-  });
-  res.json({ started: true, alreadyRunning: false });
-});
-
-function signalRoute(route: string, signal: SignalDefinition<[]>) {
-  app.post(route, async (_req, res) => {
+app.get(
+  '/api/status',
+  asyncRoute(async (_req, res) => {
     try {
-      await handle().signal(signal);
-      res.json({ ok: true });
-    } catch (err) {
-      if (err instanceof WorkflowNotFoundError) {
-        res.status(404).json({ error: 'Workflow has not been started yet.' });
+      if (!(await isOpen())) {
+        lastKnownState = null;
+        res.json({ started: false, reachable: true, state: null, worker: workerInfo() });
         return;
       }
-      res.status(502).json({ error: 'Could not reach Temporal Server / Worker.' });
+      const state = await statusFromServer();
+      lastKnownState = state;
+      res.json({ started: true, reachable: true, state, worker: workerInfo() });
+    } catch {
+      // Either `describe` or `query` didn't answer in time — most likely the Worker is down.
+      res.json({ started: lastKnownState !== null, reachable: false, state: lastKnownState, worker: workerInfo() });
     }
-  });
+  }),
+);
+
+app.post(
+  '/api/start',
+  asyncRoute(async (_req, res) => {
+    try {
+      if (await isOpen()) {
+        res.json({ started: true, alreadyRunning: true });
+        return;
+      }
+    } catch {
+      res.status(502).json({ error: 'Could not reach Temporal Server.' });
+      return;
+    }
+
+    try {
+      await client.workflow.start(counterWorkflow, {
+        taskQueue: TASK_QUEUE,
+        workflowId: WORKFLOW_ID,
+        args: [1000],
+      });
+      res.json({ started: true, alreadyRunning: false });
+    } catch (err) {
+      // Two "Start" clicks (or a page load racing a click) can both pass the `isOpen()`
+      // check above before either one's `start()` call reaches the Server. That's fine —
+      // whichever call loses the race just finds out the Workflow already exists now.
+      if (err instanceof WorkflowExecutionAlreadyStartedError) {
+        res.json({ started: true, alreadyRunning: true });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+function signalRoute(route: string, signal: SignalDefinition<[]>) {
+  app.post(
+    route,
+    asyncRoute(async (_req, res) => {
+      try {
+        await handle().signal(signal);
+        res.json({ ok: true });
+      } catch (err) {
+        if (err instanceof WorkflowNotFoundError) {
+          res.status(404).json({ error: 'Workflow has not been started yet.' });
+          return;
+        }
+        res.status(502).json({ error: 'Could not reach Temporal Server / Worker.' });
+      }
+    }),
+  );
 }
 
 signalRoute('/api/pause', pauseSignal);
@@ -181,10 +225,18 @@ signalRoute('/api/reset', resetSignal);
 signalRoute('/api/fail-now', failNowSignal);
 
 app.post('/api/worker/crash', (_req, res) => {
+  if (!workerManagedByApi) {
+    res.status(409).json({ error: 'SKIP_WORKER_SPAWN=1 is set — this API does not manage the Worker process.' });
+    return;
+  }
   res.json({ crashed: crashWorker() });
 });
 
 app.post('/api/worker/start', (_req, res) => {
+  if (!workerManagedByApi) {
+    res.status(409).json({ error: 'SKIP_WORKER_SPAWN=1 is set — this API does not manage the Worker process.' });
+    return;
+  }
   if (workerProcess) {
     res.json({ started: false, alreadyRunning: true });
     return;
@@ -198,7 +250,7 @@ async function main() {
   const connection = await Connection.connect({ address: TEMPORAL_ADDRESS });
   client = new Client({ connection });
 
-  if (process.env.SKIP_WORKER_SPAWN !== '1') {
+  if (workerManagedByApi) {
     spawnWorker();
   } else {
     console.log('[api] SKIP_WORKER_SPAWN=1 set — run the Worker yourself with `npm run worker.watch`.');

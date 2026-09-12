@@ -1,8 +1,9 @@
 # counter-workflow
 
-A Temporal Workflow that counts up, forever, one tick a second — plus a tiny HTML page to
-watch it do that. This is the simplest possible demo of **durable execution**: the counter
-never resets and never gets stuck, no matter how many things fail around it.
+A Temporal Workflow that counts up, roughly once a second, for as long as you leave it
+running — plus a tiny HTML page to watch it do that. This is the simplest possible demo of
+**durable execution**: the counter never resets and never gets stuck, no matter how many
+things fail around it.
 
 ```
 1, 2, 3, FAILURE, 4, 5, 6, FAILURE, 7, 8, ...
@@ -10,15 +11,23 @@ never resets and never gets stuck, no matter how many things fail around it.
 
 ## The idea
 
-- `counterWorkflow` loops forever: call the `tick` Activity, increment `count`, sleep a
-  second, repeat.
+- `counterWorkflow` loops: call the `tick` Activity, increment `count` if it succeeded,
+  sleep a second, repeat. Each attempt is really ~250ms of simulated Activity work plus a
+  1-second durable timer, so ticks land roughly 1.25 seconds apart, not exactly on the
+  second — this is a demo, not a metronome.
 - `tick` (in `activities.ts`) simulates a flaky dependency — it fails on its own about 1 in
-  5 calls, and you can force it to fail on demand from the UI.
+  5 calls, and you can force it to fail on demand from the UI. A failed tick does **not**
+  increment `count`.
 - When `tick` fails, the Workflow does **not** crash and does **not** reset `count`. It logs
-  the failure (visible in the "Failure log" panel) and moves on to the next tick.
+  the failure (visible in the "Failure log" panel, capped at the most recent 20) and moves
+  on to the next tick.
 - `count`, `status`, and the failure log are all Workflow state. Temporal durably persists
   every change to that state on the Server as it happens — this is what actually makes the
   demo interesting, not the `try`/`catch`. See "Try this" below.
+- Kept intentionally simple: this Workflow runs forever without ever calling
+  `continueAsNew`, so its History grows without bound. Fine for a short demo session; a
+  long-lived version of this pattern would periodically continue-as-new to keep History
+  small. Not implemented here on purpose — one less concept to explain.
 
 ## Project layout
 
@@ -60,8 +69,10 @@ SKIP_WORKER_SPAWN=1 npm run api    # terminal 2: API + UI, no auto-spawned Worke
 npm run worker.watch               # terminal 3: the Worker, auto-restarts on save
 ```
 
-In this mode the UI's "Crash Worker" / "Start Worker" buttons won't have a process to
-manage — use `Ctrl+C` / restart `worker.watch` manually instead (see "Try this" below).
+In this mode the API knows it doesn't own the Worker: the UI shows "Worker: externally
+managed" and disables the "Crash Worker" / "Start Worker" buttons (they'd otherwise spawn a
+second, API-owned Worker competing with your manual one on the same task queue). Use
+`Ctrl+C` / restart `worker.watch` yourself instead.
 
 ## Using the UI
 
@@ -69,14 +80,21 @@ manage — use `Ctrl+C` / restart `worker.watch` manually instead (see "Try this
   Pausing suspends the Workflow with a durable `condition()` wait, not a polling loop.
 - **Trigger failure (next tick)** — signals the Workflow to force the *next* `tick` to fail,
   so you don't have to wait on the ~20% natural failure rate.
-- **Crash Worker process** — `SIGKILL`s the Worker process outright. The count freezes (the
-  UI shows "worker unreachable") because nothing is running your Workflow code — the Server
-  is just holding durable state, waiting. It auto-restarts after ~4 seconds, and the count
-  resumes at the exact value it left off at.
-  - You may see the count jump by more than expected right after it resumes. That's real:
-    the timer between ticks is a **durable Server-side timer**, so it kept ticking the
-    whole time the Worker was down. The new Worker just has a small backlog of already-due
-    ticks to burn through — none of them are lost or double-counted.
+- **Crash Worker process** — `SIGKILL`s the Worker process outright (only works when the API
+  is managing it — see "Running it" above; the button is disabled under
+  `SKIP_WORKER_SPAWN=1`). The count freezes (the UI shows "worker unreachable") because
+  nothing is running your Workflow code — the Server is just holding durable state,
+  waiting. The API respawns a new Worker process ~4 seconds later, and — because that new
+  process still has to cold-start (`ts-node` + bundling the Workflow code takes a couple
+  more seconds the first time) — it can be closer to 6-8 seconds in total before the count
+  moves again. Either way, it resumes at the count it left off at.
+  - You'll often see the count jump forward by more than one tick right after it resumes,
+    sometimes several. That's expected: the Server keeps its own durable timers running
+    the whole time the Worker is down, and if the Worker crashed mid-`tick`, that in-flight
+    Activity attempt also has to hit its 10-second timeout and get logged as a failure
+    before the loop can continue. Once a Worker reconnects, it works through whatever was
+    already due — nothing is lost or double-counted, it just doesn't trickle back in one
+    tick at a time.
 
 ## Try this
 
