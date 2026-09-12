@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Temporal Counter — Durable Execution Demo</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Durable Counter</h1>
+        <p class="subtitle">
+          A Temporal Workflow that counts up forever. Failures don't reset it &mdash; they're just a blip in the log.
+        </p>
+      </header>
+
+      <section class="panel count-panel">
+        <div id="count" class="count">&mdash;</div>
+        <div id="workflow-status" class="badge badge-unknown">unknown</div>
+      </section>
+
+      <section class="panel">
+        <h2>Workflow controls</h2>
+        <div class="button-row">
+          <button id="btn-start" class="btn btn-primary">Start</button>
+          <button id="btn-pause" class="btn">Pause</button>
+          <button id="btn-resume" class="btn">Resume</button>
+          <button id="btn-stop" class="btn btn-danger">Stop</button>
+          <button id="btn-reset" class="btn">Reset count</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Break things</h2>
+        <p class="hint">
+          Ticks fail on their own about 1 in 5 times &mdash; that's the flaky-dependency simulation. Use these to force
+          the point.
+        </p>
+        <div class="button-row">
+          <button id="btn-fail-now" class="btn btn-warning">Trigger failure (next tick)</button>
+          <button id="btn-crash-worker" class="btn btn-danger">Crash Worker process</button>
+          <button id="btn-start-worker" class="btn">Start Worker</button>
+        </div>
+        <div id="worker-status" class="worker-status">Worker: checking&hellip;</div>
+      </section>
+
+      <section class="panel">
+        <h2>Failure log</h2>
+        <p class="hint">Every failure below still let the counter keep going right after it.</p>
+        <ol id="failure-log" class="failure-log">
+          <li class="empty">No failures yet.</li>
+        </ol>
+      </section>
+
+      <footer>
+        <p id="connection-note" class="connection-note"></p>
+      </footer>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

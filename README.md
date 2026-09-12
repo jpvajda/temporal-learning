@@ -145,6 +145,36 @@ again. Open the Web UI and watch the Activity retry against the down API.
 Restart the service — the next retry succeeds and the Workflow completes,
 picking up right where it left off instead of starting over.
 
+### `counter-workflow/`
+
+A Workflow that counts up forever, one tick a second, plus a tiny HTML page
+to watch it. Demonstrates durable execution in the simplest way possible:
+failures (simulated, or forced from the UI) get logged but never reset or
+stop the count — `1, 2, 3, FAILURE, 4, 5, 6, FAILURE, 7, 8, ...`
+
+- `src/workflows.ts` — `counterWorkflow`: the loop, plus Signals
+  (`pause`/`resume`/`stop`/`reset`/`failNow`) and a `status` Query.
+- `src/activities.ts` — `tick`: simulates a flaky dependency (~20% failure
+  rate, or force it via Signal).
+- `src/api.ts` — Express server: serves the UI, acts as the Temporal Client,
+  and manages the Worker process so the UI's "Crash Worker" button has
+  something real to kill.
+- `public/` — plain HTML/CSS/vanilla JS (no framework) UI: live count,
+  status badge, start/pause/resume/stop/reset controls, a failure log, and a
+  "Crash Worker process" button.
+
+Run it (from `counter-workflow/`, in two terminals):
+
+```bash
+npm install
+npm run api    # terminal 2: API + UI (also spawns the Worker) — open http://localhost:3000
+```
+
+**Try this:** click "Crash Worker process" in the UI while it's counting.
+The count freezes (no process is running your Workflow code) until the
+Worker auto-restarts a few seconds later — then it resumes at the exact
+count it left off at. See `counter-workflow/README.md` for details.
+
 ## Useful links
 
 - [Temporal Docs](https://docs.temporal.io)
