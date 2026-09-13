@@ -9,6 +9,8 @@ things fail around it.
 1, 2, 3, FAILURE, 4, 5, 6, FAILURE, 7, 8, ...
 ```
 
+[![app image](./images/app.png)]
+
 ## The idea
 
 - `counterWorkflow` loops: call the `tick` Activity, increment `count` if it succeeded,

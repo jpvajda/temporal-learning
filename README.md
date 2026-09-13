@@ -147,33 +147,46 @@ picking up right where it left off instead of starting over.
 
 ### `counter-workflow/`
 
-A Workflow that counts up forever, one tick a second, plus a tiny HTML page
-to watch it. Demonstrates durable execution in the simplest way possible:
-failures (simulated, or forced from the UI) get logged but never reset or
-stop the count — `1, 2, 3, FAILURE, 4, 5, 6, FAILURE, 7, 8, ...`
+A Workflow that counts up forever, plus a small HTML page to watch it.
+Shows durable execution: the count does not reset when a tick fails or
+when the Worker process dies. More detail is in
+[`counter-workflow/README.md`](counter-workflow/README.md).
 
-- `src/workflows.ts` — `counterWorkflow`: the loop, plus Signals
-  (`pause`/`resume`/`stop`/`reset`/`failNow`) and a `status` Query.
-- `src/activities.ts` — `tick`: simulates a flaky dependency (~20% failure
-  rate, or force it via Signal).
-- `src/api.ts` — Express server: serves the UI, acts as the Temporal Client,
-  and manages the Worker process so the UI's "Crash Worker" button has
-  something real to kill.
-- `public/` — plain HTML/CSS/vanilla JS (no framework) UI: live count,
-  status badge, start/pause/resume/stop/reset controls, a failure log, and a
-  "Crash Worker process" button.
+- `src/workflows.ts` — `counterWorkflow`: the loop, Signals
+  (`pause` / `resume` / `stop` / `reset` / `failNow`), and a `status` Query.
+- `src/activities.ts` — `tick`: one flaky step (~20% failure, or force it
+  from the UI).
+- `src/api.ts` — Express on port `3000`: serves the UI, is the Temporal
+  Client, and can spawn/kill the Worker for the "Crash Worker" button.
+- `src/worker.ts` — polls task queue `counter-tasks` (started for you by
+  `npm run api`).
+- `public/` — the UI (no framework).
 
-Run it (from `counter-workflow/`, in two terminals):
+Run it in **two** terminals. The API talks to Temporal on
+`localhost:7233`. If the Server is down, `npm run api` fails with
+`Failed to connect before the deadline` (same idea as
+`ECONNREFUSED :7233`).
 
 ```bash
-npm install
-npm run api    # terminal 2: API + UI (also spawns the Worker) — open http://localhost:3000
+# terminal 1 — leave this running
+temporal server start-dev
 ```
 
-**Try this:** click "Crash Worker process" in the UI while it's counting.
-The count freezes (no process is running your Workflow code) until the
-Worker auto-restarts a few seconds later — then it resumes at the exact
-count it left off at. See `counter-workflow/README.md` for details.
+```bash
+# terminal 2 — from counter-workflow/
+npm install
+npm run api
+```
+
+Open [http://localhost:3000](http://localhost:3000) and click **Start**.
+The count should tick up about once a second.
+
+UI: [http://localhost:8233](http://localhost:8233) — Workflow Id
+`counter-demo`.
+
+**Try this:** click **Crash Worker process** while it's counting. The
+number freezes until a new Worker starts (~4–8 seconds), then it
+continues from the same count — it does not go back to 0.
 
 ## Useful links
 
