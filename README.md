@@ -188,6 +188,21 @@ UI: [http://localhost:8233](http://localhost:8233) — Workflow Id
 number freezes until a new Worker starts (~4–8 seconds), then it
 continues from the same count — it does not go back to 0.
 
+### `edu-102-typescript-code/`
+
+[Temporal 102](https://learn.temporal.io/courses/temporal_102) exercises
+(durable execution, testing, debugging an Activity). Details and run
+order are in
+[`edu-102-typescript-code/README.md`](edu-102-typescript-code/README.md).
+
+```bash
+# terminal 1 — this course uses UI port 8080
+temporal server start-dev --ui-port 8080 --db-filename clusterdata.db
+```
+
+Then `cd` into an exercise’s `practice/` folder, `command npm install`,
+and follow that exercise’s README.
+
 ## Useful links
 
 - [Temporal Docs](https://docs.temporal.io)
