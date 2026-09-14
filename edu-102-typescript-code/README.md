@@ -39,7 +39,6 @@ Then follow that exercise’s README.
 | Directory | Description |
 |---|---|
 | [samples/age-estimation](samples/age-estimation) | Call a remote API to estimate age from a name |
-| [samples/using-objects](samples/using-objects) | Objects as Workflow input and output |
 
 ## Docs
 
