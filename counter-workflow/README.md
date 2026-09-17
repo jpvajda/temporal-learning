@@ -109,3 +109,28 @@ second, API-owned Worker competing with your manual one on the same task queue).
 
 This is the whole point of Temporal: your process can die, and the thing it was doing
 doesn't die with it.
+
+## How this maps to Temporal Core Primitives
+
+| Primitive | What it is | In this app |
+|---|---|---|
+| **Client** | SDK code in *your* process that talks to the Temporal Server. Starts Workflows, sends Signals, runs Queries. Does not execute Workflow or Activity code. | `src/api.ts` (the Express app behind the UI) makes every Client call the UI uses: **Start / Pause / Resume / Stop / Reset / Trigger failure**, plus the status **Query**. `src/client.ts` is a separate, optional CLI that only starts the Workflow — no UI needed. |
+| **Workflow** | The orchestration — sequence of steps, written as code. Deterministic. No HTTP, no `Math.random()`, no wall-clock `setTimeout`. | `src/workflows.ts` → `counterWorkflow`. The loop: `tick`, maybe increment `count`, `sleep`, repeat. `count` / `status` / failure log live here. |
+| **Activity** | One unit of work inside that orchestration. Side effects and flakiness live here. | `src/activities.ts` → `tick`. Pretend API call: ~250ms delay, ~20% random fail, or fail when `failNow` was signaled. |
+| **Worker** | The process that runs *your* Workflow and Activity code. Polls a Task Queue. If it dies, the Server still has the state. | `src/worker.ts`. `npm run api` spawns it. **Crash Worker** `SIGKILL`s this process. |
+| **Task Queue** | Named queue the Server puts work on; Workers pull from it (Workflow tasks, Activity tasks, Signals, Timers firing). | `counter-tasks` in `src/shared.ts`. Client, Worker, and Server must use the same name. |
+| **Signal** | Async message to a *running* Workflow Execution. Changes its state (human-in-the-loop). | `pause` / `resume` / `stop` / `reset` / `failNow` in `workflows.ts`. UI buttons → API → `handle.signal(...)`. Each handler calls `log.info(...)`, so a click shows up in the Worker terminal and as a `WorkflowExecutionSignaled` event in the UI's Event History. |
+| **Timer** | Durable delay. Survives Worker crashes. Not `setTimeout`. | `await sleep(tickIntervalMs)` between ticks — `tickIntervalMs` defaults to `1000` (1 second), passed in when the Workflow is started. While the Worker is down, the Server-side timer still counts down; after restart the Worker catches up. |
+| **Temporal Server** | Stores history, owns Task Queues and Timers, retries, hands work to Workers. Never runs your TypeScript. | `temporal server start-dev` on `localhost:7233`. UI at [http://localhost:8233](http://localhost:8233), Workflow Id `counter-demo`. |
+
+**How a tick flows**
+
+1. **Client** (API) already started `counterWorkflow` with Workflow Id `counter-demo`.
+2. **Server** puts a Workflow task on **Task Queue** `counter-tasks`.
+3. **Worker** pulls it, runs the **Workflow** loop, which schedules the `tick` **Activity**.
+4. **Server** queues that Activity; **Worker** runs `tick`. Success → `count++`. Failure → log it, don't increment.
+5. **Workflow** starts a **Timer** (`tickIntervalMs`, 1 second by default), then loops.
+6. A UI button is a **Signal**. The Server delivers it on the next Workflow task. Pause uses `condition()` (durable wait), not a polling loop.
+
+The HTML page in `public/` is not a Temporal primitive. It talks to the API; the API is the Client.
+

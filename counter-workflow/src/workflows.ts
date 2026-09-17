@@ -27,6 +27,7 @@ import {
   defineSignal,
   defineQuery,
   rootCause,
+  log,
 } from '@temporalio/workflow';
 import type * as activities from './activities';
 
@@ -74,21 +75,26 @@ export async function counterWorkflow(tickIntervalMs = 1000): Promise<CounterSta
   const failures: FailureEvent[] = [];
 
   setHandler(pauseSignal, () => {
+    log.info('Signal received: pause', { count });
     paused = true;
   });
   setHandler(resumeSignal, () => {
+    log.info('Signal received: resume', { count });
     paused = false;
   });
   setHandler(stopSignal, () => {
+    log.info('Signal received: stop', { count });
     stopped = true;
     paused = false; // don't leave `stop` waiting on the paused condition below
   });
   setHandler(resetSignal, () => {
+    log.info('Signal received: reset', { previousCount: count });
     count = 0;
     failureCount = 0;
     failures.length = 0;
   });
   setHandler(failNowSignal, () => {
+    log.info('Signal received: failNow', { count });
     failOnNextTick = true;
   });
   setHandler(statusQuery, () => ({
